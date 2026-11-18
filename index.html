@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>면접자 List 자동 작성</title>
+<style>
+  :root{
+    --bg:#f4f6fa; --card:#ffffff; --ink:#1d2433; --sub:#5b6577; --line:#dfe3ea;
+    --navy:#1F3864; --accent:#2f5aa8; --accent-weak:#e8eefb; --ok:#1d7a46; --warn:#a15c00; --err:#b42318;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Malgun Gothic","맑은 고딕","Apple SD Gothic Neo",system-ui,sans-serif}
+  header{background:var(--navy);color:#fff;padding:18px 24px}
+  header h1{margin:0;font-size:20px;font-weight:700}
+  header p{margin:4px 0 0;opacity:.85;font-size:13px}
+  #libs{margin-top:8px;font-size:12px;display:flex;gap:8px;flex-wrap:wrap}
+  .badge{padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.15)}
+  .badge.ok{background:#2e7d4f}.badge.err{background:#b42318}
+  main{max-width:1500px;margin:0 auto;padding:20px 16px 60px}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:14px}
+  .step h2{margin:0 0 10px;font-size:16px;display:flex;align-items:center;gap:8px}
+  .num{display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--navy);color:#fff;font-size:13px;align-items:center;justify-content:center}
+  .drop{display:block;border:2px dashed #b8c2d3;border-radius:8px;padding:18px;text-align:center;color:var(--sub);cursor:pointer;transition:.15s}
+  .drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-weak);color:var(--accent)}
+  .drop input{display:none}
+  .info{margin-top:8px;font-size:13px;color:var(--sub)}
+  .info b{color:var(--ink)}
+  .mode{display:inline-block;padding:1px 8px;border-radius:4px;font-size:12px;font-weight:700;margin-left:6px}
+  .mode.keep{background:#e3f3ea;color:var(--ok)}.mode.new{background:#fff1dc;color:var(--warn)}
+  .filelist{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}
+  .filelist li{background:#eef1f6;border-radius:4px;padding:2px 8px;font-size:12px}
+  .filelist li.fail{background:#fde8e6;color:var(--err)}
+  .tablewrap{overflow:auto;border:1px solid var(--line);border-radius:6px;max-height:70vh}
+  table{border-collapse:collapse;width:max-content;min-width:100%}
+  th,td{border:1px solid var(--line);padding:0;vertical-align:top}
+  th{background:var(--navy);color:#fff;font-weight:700;padding:6px 8px;position:sticky;top:0;z-index:1;white-space:nowrap;font-size:13px}
+  td input,td textarea{width:100%;border:0;padding:6px 7px;font:inherit;font-size:13px;background:transparent;resize:vertical;color:var(--ink)}
+  td textarea{min-height:52px}
+  td input:focus,td textarea:focus{outline:2px solid var(--accent);background:#fffbe6}
+  tbody tr:nth-child(even){background:#f7f8fb}
+  td.file{font-size:11px;color:var(--sub);padding:6px;max-width:150px;word-break:break-all}
+  td.act{text-align:center;vertical-align:middle}
+  td.empty-cell input{background:#fff6f5}
+  .btn{border:0;border-radius:6px;padding:9px 16px;font:inherit;font-weight:700;cursor:pointer}
+  .btn.primary{background:var(--navy);color:#fff}.btn.primary:disabled{background:#9aa6bb;cursor:not-allowed}
+  .btn.ghost{background:#eef1f6;color:var(--ink)}
+  .btn.del{background:none;color:var(--err);padding:4px 8px;font-size:12px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .hint{font-size:12px;color:var(--sub)}
+  #status{margin-top:10px;font-size:13px}
+  #status.err{color:var(--err)} #status.ok{color:var(--ok)}
+  .progress{height:6px;background:#e5e9f0;border-radius:3px;overflow:hidden;margin-top:8px;display:none}
+  .progress>div{height:100%;width:0;background:var(--accent);transition:width .2s}
+</style>
+</head>
+<body>
+<header>
+  <h1>면접자 List 자동 작성</h1>
+  <p>이력서 PDF에서 필요한 항목을 뽑아 기존 "면접자 List" 엑셀에 새 행으로 추가합니다. 모든 처리는 이 브라우저 안에서만 이루어집니다.</p>
+  <div id="libs"><span class="badge" id="lib-pdf">pdf.js 로딩 중…</span><span class="badge" id="lib-exceljs">ExcelJS 로딩 중…</span><span class="badge" id="lib-xlsx">SheetJS (.xls 업로드 시 로딩)</span></div>
+</header>
+<main>
+  <section class="step">
+    <h2><span class="num">1</span>면접자 List 엑셀 업로드 (기준 파일)</h2>
+    <label class="drop" id="dropExcel">
+      <input type="file" id="excelInput" accept=".xlsx,.xls">
+      여기를 눌러 선택하거나 파일을 끌어다 놓으세요 (.xlsx / .xls)
+    </label>
+    <div class="info" id="excelInfo">아직 업로드한 파일이 없습니다. (파일 없이 진행하면 기본 양식으로 새 파일을 만듭니다.)</div>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">2</span>이력서 PDF 업로드 (여러 개 가능 · 파일 1개 = 면접자 1명)</h2>
+    <label class="drop" id="dropPdf">
+      <input type="file" id="pdfInput" accept=".pdf" multiple>
+      여기를 눌러 선택하거나 PDF 파일들을 끌어다 놓으세요
+    </label>
+    <div class="progress" id="prog"><div></div></div>
+    <ul class="filelist" id="pdfList"></ul>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">3</span>표에서 확인 · 수정</h2>
+    <p class="hint">자동 추출은 100% 정확하지 않습니다. 저장 전에 꼭 확인하고 칸을 직접 고쳐 주세요. 이전 직장 · 학교/전공 칸은 여러 줄로 입력할 수 있습니다.</p>
+    <div class="tablewrap"><table id="grid"><thead></thead><tbody></tbody></table></div>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" id="addRow">+ 빈 행 추가</button><span class="hint" id="rowCount"></span></div>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">4</span>저장</h2>
+    <div class="row">
+      <button class="btn primary" id="saveBtn" disabled>결과 .xlsx 다운로드</button>
+      <span class="hint" id="saveHint">PDF를 올리면 저장할 수 있습니다.</span>
+    </div>
+    <div id="status"></div>
+  </section>
+</main>
+
+<script id="core">
+/* ===================== 공통 정의 ===================== */
+var FIELDS = [
+  {key:'name', label:'성명'},
+  {key:'genderAge', label:'성별/나이'},
+  {key:'address', label:'주소'},
+  {key:'degree', label:'학위'},
+  {key:'school', label:'학교/전공(졸업)', multi:true},
+  {key:'career', label:'신입/경력'},
+  {key:'prevJob', label:'이전 직장', multi:true},
+  {key:'note', label:'비고'},
+  {key:'dept', label:'면접부서'},
+  {key:'phone', label:'핸드폰'},
+  {key:'email', label:'이메일'}
+];
+var DEFAULT_HEADERS = ['No.','성명','성별/나이','주소','학위','학교/전공(졸업)','신입/경력','이전 직장','비고','면접부서','핸드폰','이메일'];
+var HEADER_SYNONYMS = {
+  no:['no','no.','번호','순번','연번','순서'],
+  name:['성명','이름','성함','지원자','지원자명','면접자','면접자명'],
+  genderAge:['성별/나이','성별/연령','성별나이','성별·나이','성별(나이)','성별,나이'],
+  address:['주소','거주지','거주지역','거주지주소'],
+  degree:['학위','최종학력','학력'],
+  school:['학교/전공(졸업)','학교/전공','학교/전공(졸업연월)','학교/전공(졸업년월)','출신학교','학교','학교전공','학교및전공'],
+  career:['신입/경력','경력구분','신입경력','신입/경력구분'],
+  prevJob:['이전직장','전직장','이전회사','전회사','경력사항','이전직장(기간)','주요경력'],
+  note:['비고','메모'],
+  dept:['면접부서','지원부서','부서','지원분야','지원부문','지원직무'],
+  phone:['핸드폰','연락처','휴대폰','전화번호','휴대전화','핸드폰번호','휴대폰번호','hp','h.p','mobile'],
+  email:['이메일','e-mail','email','메일','이메일주소','e-mail주소']
+};
+var KNOWN_OTHER = ['참석여부','참석','면접결과','결과','입사여부','일자','면접일자','면접일','시작','종료','시간','면접시간','장소','면접장소','생년월일','차색','차종','차량번호','차량','합격여부'];
+var PLATFORM_RE = /사람인|잡코리아|워크넷|인크루트|알바몬|알바천국|잡플래닛|원티드|커리어넷|피플앤잡|잡알리오|고용24|리멤버|saramin|jobkorea|incruit|worknet|wanted/i;
+
+function normHeader(s){ return String(s == null ? '' : s).replace(/\s+/g,'').toLowerCase(); }
+var SYN_INDEX = (function(){ var m = {}; Object.keys(HEADER_SYNONYMS).forEach(function(k){ HEADER_SYNONYMS[k].forEach(function(s){ m[normHeader(s)] = k; }); }); return m; })();
+var OTHER_INDEX = (function(){ var m = {}; KNOWN_OTHER.forEach(function(s){ m[normHeader(s)] = true; }); return m; })();
+function headerKey(text){
+  var n = normHeader(text); if(!n) return null;
+  if (SYN_INDEX[n]) return SYN_INDEX[n];
+  if (OTHER_INDEX[n]) return '_other';
+  // 부분 일치 (예: "학교/전공(졸업)" 변형, "핸드폰 번호")
+  if (/^no\.?$/.test(n)) return 'no';
+  if (n.indexOf('학교')>=0 && n.indexOf('전공')>=0) return 'school';
+  if (n.indexOf('성별')>=0) return 'genderAge';
+  if (n.indexOf('이메일')>=0 || n.indexOf('e-mail')>=0) return 'email';
+  if (n.indexOf('핸드폰')>=0 || n.indexOf('휴대')>=0 || n.indexOf('연락처')>=0) return 'phone';
+  if (n.indexOf('이전직장')>=0 || n.indexOf('전직장')>=0) return 'prevJob';
+  if (n.indexOf('부서')>=0) return 'dept';
+  if (n.indexOf('신입')>=0) return 'career';
+  return null;
+}
+
+/* ===================== PDF → 줄(line) 구성 ===================== */
+function median(arr){ if(!arr.length) return 0; var a = arr.slice().sort(function(x,y){return x-y;}); return a[Math.floor(a.length/2)]; }
+
+// pages: [{w,h,items:[{s,x,y,h,w}]}]
+function buildLines(pages){
+  var lines = [];
+  pages.forEach(function(pg, pi){
+    var items = pg.items.filter(function(it){
+      if (!it.s || !it.s.trim()) return false;
+      if (it.y > pg.h - 28 || it.y < 24) return false;          // 브라우저 인쇄 머리글/바닥글
+      return true;
+    }).slice().sort(function(a,b){ return (b.y - a.y) || (a.x - b.x); });
+    var groups = [];
+    items.forEach(function(it){
+      var tol = Math.max(2, (it.h || 8) * 0.45);
+      var g = null;
+      for (var i = groups.length - 1; i >= 0 && i >= groups.length - 4; i--) { if (Math.abs(groups[i].y - it.y) <= tol) { g = groups[i]; break; } }
+      if (g) g.items.push(it); else groups.push({y: it.y, items: [it]});
+    });
+    groups.sort(function(a,b){ return b.y - a.y; });
+    groups.forEach(function(g){
+      g.items.sort(function(a,b){ return a.x - b.x; });
+      var segs = [], hs = [], xs = [];
+      g.items.forEach(function(it){
+        var s = it.s.replace(/\s+/g,' ').trim();
+        var last = segs.length - 1;
+        // 글자 단위로 잘린 조각은 이어 붙임
+        if (last >= 0 && it.w != null && xs[last] != null && (it.x - xs[last]) < Math.max(1.5, (it.h||8) * 0.25)) {
+          segs[last] += s; xs[last] = it.x + (it.w || 0);
+        } else { segs.push(s); hs.push(it.h || 0); xs.push(it.x + (it.w || 0)); }
+      });
+      lines.push({p: pi + 1, y: g.y, segs: segs, hs: hs, h: Math.max.apply(null, hs), x0: g.items[0].x, text: segs.join('\t')});
+    });
+  });
+  return lines;
+}
+
+var SECTION_RE = /^(학력|학력사항|경력|경력사항|경험\/활동\/교육|경험|활동|대외활동|교육|교육사항|교육이수|자격\/어학\/수상|자격증|자격|어학|수상|수상내역|포트폴리오\/기타문서|포트폴리오|취업\s*우대사항|우대사항|자기소개서|경력기술서|희망근무조건|병역|병역사항|해외경험|보유기술|나의\s*스킬|스킬|간략\s*소개|프로젝트|인적사항|기본정보|증명서|기타)$/;
+function sectionKey(name){
+  var n = name.replace(/\s+/g,'');
+  if (/^학력/.test(n)) return 'edu';
+  if (n === '경력' || n === '경력사항') return 'career';
+  return 'other:' + n;
+}
+function splitSections(lines){
+  var bodyH = median(lines.map(function(l){ return l.hs[0]; }).filter(Boolean)) || 8;
+  function find(strict){
+    var out = [], cur = {key:'pre', name:'', lines:[]};
+    lines.forEach(function(l){
+      var first = l.segs[0];
+      var isSec = SECTION_RE.test(first) && (strict ? l.hs[0] >= bodyH * 1.3 : (l.segs.length <= 2 && first.length <= 12));
+      if (isSec) { out.push(cur); cur = {key: sectionKey(first), name: first, head: l, lines: []}; }
+      else cur.lines.push(l);
+    });
+    out.push(cur);
+    return out;
+  }
+  var secs = find(true);
+  var has = secs.some(function(s){ return s.key === 'edu' || s.key === 'career'; });
+  if (!has) secs = find(false);
+  return secs;
+}
+
+/* ===================== 항목 추출 ===================== */
+var DATE_RANGE_RE = /^\s*(\d{4})\s*[.\-\/년]\s*(\d{1,2})(?:\s*[.\-\/]\s*\d{1,2})?\s*월?\s*~\s*(?:(\d{4})\s*[.\-\/년]\s*(\d{1,2})(?:\s*[.\-\/]\s*\d{1,2})?\s*월?|(재학\s*중|재직\s*중|재학|재직|현재))?/;
+var DATE_ONLY_RE = /^\s*(\d{4})\s*[.\-\/]\s*(\d{1,2})(?:\s*[.\-\/]\s*\d{1,2})?\s*$/;
+function yymm(y, m){ return "'" + String(y).slice(2) + '.' + ('0' + m).slice(-2); }
+
+function parseDated(lines){
+  // 날짜 범위로 시작하는 줄마다 항목 하나
+  var entries = [];
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    var m = l.text.match(DATE_RANGE_RE);
+    if (!m) continue;
+    var rest = l.text.slice(m[0].length).split('\t').map(function(s){ return s.trim(); }).filter(Boolean);
+    var endY = m[3], endM = m[4], current = !!m[5];
+    if (!endY && !current && rest.length && /^(재직\s*중|재학\s*중|현재|재직|재학)$/.test(rest[0])) { current = true; rest.shift(); }
+    var j = i + 1, body = [];
+    if (!endY && !current && lines[j]) {
+      var mm = lines[j].segs[0].match(DATE_ONLY_RE);
+      if (mm) { endY = mm[1]; endM = mm[2]; }
+    }
+    for (; j < lines.length && !DATE_RANGE_RE.test(lines[j].text); j++) body.push(lines[j]);
+    entries.push({sy: +m[1], sm: +m[2], ey: endY ? +endY : null, em: endM ? +endM : null, current: current, rest: rest, body: body, line: l});
+  }
+  return entries;
+}
+
+var SCHOOL_RE = /^(.+?(?:대학교|대학원|University|College|Univ\.?|대학|고등학교|고교|중학교|학교))(?![가-힣A-Za-z])(\s*\((?!\s*\d\s*[,·]?\s*\d?\s*년제)[^)]*\))?/i;
+function parseEducation(sec){
+  var res = {items: [], hasGED: false, summary: ''};
+  if (!sec) return res;
+  var all = (sec.head ? sec.head.text + '\n' : '') + sec.lines.map(function(l){ return l.text; }).join('\n');
+  res.summary = sec.head ? sec.head.segs.slice(1).join(' ') : '';
+  res.hasGED = /검정고시/.test(all);
+  parseDated(sec.lines).forEach(function(e){
+    var segs = e.rest.slice();
+    if (!segs.length) return;
+    var school, majorSegs;
+    var m0 = segs[0].match(SCHOOL_RE);
+    if (segs.length > 1 && m0 && m0[0].length >= segs[0].length - 1) { school = segs[0]; majorSegs = segs.slice(1); }
+    else {
+      var joined = segs.join(' ');
+      var m = joined.match(SCHOOL_RE);
+      if (!m) return;
+      school = m[1] + (m[2] || ''); majorSegs = [joined.slice(m[0].length)];
+    }
+    var flags = '';
+    majorSegs = majorSegs.filter(function(s){
+      if (/^\(?\s*(\d\s*[,·]?\s*\d?\s*년제|\d년제|2,3년제|4년제)\s*\)?$/.test(s)) return false;
+      if (/^\((석사|박사|학사|석박사통합|석·박사)\)$/.test(s)) { flags += s; return false; }
+      return true;
+    });
+    var major = majorSegs.join(' ')
+      .replace(/\(\s*\d\s*[,·]?\s*\d?\s*년제\s*\)/g, '')
+      .replace(/\((학사|석사|박사)(학위)?\)/g, function(x){ flags += x; return ''; })
+      .replace(/\s+/g, ' ').trim();
+    school = school.replace(/\s*\(\s*\d\s*[,·]?\s*\d?\s*년제\s*\)/g, '').trim();
+    var bodyText = e.body.map(function(l){ return l.text; }).join('\n');
+    var stM = bodyText.match(/(^|\n|\t)(졸업예정|졸업|수료|재학중|재학|중퇴|자퇴|휴학중|휴학|편입)(?=\t|\n|$)/);
+    var status = stM ? stM[2] : (e.current ? '재학' : '');
+    var text = school + ' ' + major + ' ' + flags + ' ' + bodyText;
+    var isHigh = /고등학교|고교|중학교|초등학교|검정고시/.test(school);
+    var isGrad = /대학원/.test(school) || /석사|박사/.test(flags + ' ' + e.line.text);
+    var isUniv = !isHigh && (isGrad || /대학교|대학|University|College|Univ/i.test(school));
+    var level = /박사/.test(text) && !/석사/.test(flags) ? 'phd' : (isGrad ? 'master' : 'bachelor');
+    if (/박사/.test(flags)) level = 'phd'; else if (/석사/.test(flags)) level = 'master';
+    var graduated = status === '졸업' || (!status && !!e.ey && !e.current);
+    res.items.push({school: school, major: major, status: status, graduated: graduated, ey: e.ey, em: e.em, sy: e.sy, sm: e.sm,
+      isHigh: isHigh, isUniv: isUniv, isGrad: isGrad, level: level});
+  });
+  return res;
+}
+
+function schoolText(edu){
+  var list = edu.items.filter(function(it){ return it.isUniv; })
+    .sort(function(a,b){ return (a.isGrad - b.isGrad) || ((a.sy*100+a.sm) - (b.sy*100+b.sm)); });
+  return list.map(function(it){
+    var tail;
+    if (it.graduated && it.ey) tail = '(' + yymm(it.ey, it.em) + ')';
+    else if (it.status === '수료') tail = '(수료)';
+    else if (it.status) tail = '(' + (it.status === '재학중' ? '재학' : it.status) + ')';
+    else tail = '';
+    return it.school + (it.major ? ' / ' + it.major : '') + tail;
+  }).join('\n');
+}
+
+function degreeText(edu){
+  var u = edu.items.filter(function(it){ return it.isUniv; });
+  var grad = function(lv){ return u.some(function(it){ return it.isGrad && it.level === lv && (it.graduated || it.status === '수료'); }); };
+  if (grad('phd') || u.some(function(it){ return it.level === 'phd' && it.graduated; })) return '박사졸';
+  if (grad('master')) return '석사졸';
+  if (u.some(function(it){ return !it.isGrad && it.graduated; })) return '대졸';
+  if (u.length) return '대학 중퇴';
+  if (edu.items.length || edu.hasGED || edu.summary) {
+    if (edu.hasGED) return '검정고시';
+    if (!edu.items.length && edu.summary) {
+      var s = edu.summary;
+      if (/박사/.test(s)) return '박사졸';
+      if (/석사/.test(s)) return '석사졸';
+      if (/대학/.test(s)) return /졸업/.test(s) ? '대졸' : '대학 중퇴';
+    }
+    return '고졸';
+  }
+  return '';
+}
+
+function normCompany(name){
+  var s = String(name || '');
+  var hadJu = /㈜|\(\s*주\s*\)|주식회사|\(株\)/.test(s);
+  s = s.replace(/㈜|\(\s*주\s*\)|주식회사|\(株\)/g, ' ').replace(/\s+/g, ' ').trim();
+  return s ? s + (hadJu ? '(주)' : '') : '';
+}
+
+function parseCareer(sec){
+  if (!sec) return [];
+  var out = [];
+  parseDated(sec.lines).forEach(function(e){
+    if (!e.rest.length) return;
+    var raw = e.rest[0];
+    if (e.rest.length === 1 && raw.indexOf('·') > 0) raw = raw.split('·')[0].trim().split(' ').slice(0, -1).join(' ') || raw;
+    // "㈜" 가 따로 떨어진 조각인 경우
+    if (e.rest[1] && /^(㈜|\(주\))$/.test(e.rest[1])) raw += e.rest[1];
+    var name = normCompany(raw);
+    if (!name || PLATFORM_RE.test(name)) return;
+    var period = '(' + yymm(e.sy, e.sm) + '~' + (e.current || !e.ey ? '재직 중' : yymm(e.ey, e.em)) + ')';
+    out.push(name + ' ' + period);
+  });
+  return out;
+}
+
+var NAME_STOP = /^(서비스|이력서|지원분야|입사지원|신입|경력|학력|전공|자기소개서|간략소개|이메일|휴대폰|주소|희망연봉|포트폴리오|영업|지원자|인적사항|기본정보|사진|성명|이름|연락처|생년월일|입사지원서|지원서|경력기술서|졸업|재직중|남|여|남자|여자)$/;
+function extractName(pages, lines, fullText){
+  // 1) 1페이지 상단의 가장 큰 한글 이름
+  var pg = pages[0];
+  if (pg) {
+    var bodyH = median(pg.items.map(function(i){ return i.h; }).filter(Boolean)) || 8;
+    var cands = pg.items.filter(function(it){
+      var s = (it.s || '').replace(/\s+/g, '');
+      return /^[가-힣]{2,5}$/.test(s) && !NAME_STOP.test(s) && !SECTION_RE.test(s) && it.y > pg.h * 0.55 && it.y < pg.h - 28;
+    }).sort(function(a,b){ return (b.h - a.h) || (b.y - a.y); });
+    if (cands.length && cands[0].h >= bodyH * 1.3) return cands[0].s.replace(/\s+/g, '');
+  }
+  // 2) "이름 (신입/경력) 남/여, 출생연도 (나이)" 패턴
+  var m = fullText.match(/([가-힣]{2,4})\s*\(?\s*(?:신입|경력)\s*\)?\s*(?:남|여)?\s*,?\s*(?:19|20)\d{2}\s*(?:년생?)?\s*\(\s*\d{1,3}\s*세/);
+  if (m && !NAME_STOP.test(m[1])) return m[1];
+  // 3) 라벨 "성명 : 홍길동"
+  m = fullText.match(/(?:성\s*명|이\s*름)\s*[:：]?\s*([가-힣]{2,4})(?![가-힣])/);
+  if (m && !NAME_STOP.test(m[1])) return m[1];
+  // 4) "작성자 : 홍길동"
+  m = fullText.match(/작성자\s*[:：]?\s*([가-힣]{2,4})(?![가-힣])/);
+  if (m) return m[1];
+  return '';
+}
+
+function extractGenderAge(fullText){
+  var t = fullText.replace(/\s+/g, ' ');
+  var g = '', age = '';
+  var m = t.match(/(남|여)(?:자|성)?\s*[,\/·]?\s*((?:19|20)\d{2})\s*(?:년생?)?\s*\(\s*(?:만\s*)?(\d{1,3})\s*세\s*\)/);
+  if (m) { g = m[1]; age = m[3]; }
+  if (!age) { m = t.match(/\(\s*(?:만\s*)?(\d{1,3})\s*세\s*\)/); if (m) age = m[1]; }
+  if (!g) { m = t.match(/(?:^|[\s,(])(남|여)(?:자|성)?\s*[,\/·]?\s*(?:(?:19|20)\d{2}\s*(?:년생?)?\s*)?\(\s*(?:만\s*)?\d{1,3}\s*세/); if (m) g = m[1]; }
+  if (!g) { m = t.match(/성\s*별\s*[:：]?\s*(남|여)/); if (m) g = m[1]; }
+  if (!age) {
+    m = t.match(/((?:19|20)\d{2})\s*년생/) || t.match(/생년월일\s*[:：]?\s*((?:19|20)\d{2})/);
+    if (m) age = String(new Date().getFullYear() - (+m[1]));
+  }
+  if (!g && !age) return '';
+  return (g ? g + '성' : '') + (g && age ? '/' : '') + (age ? age + '세' : '');
+}
+
+var SIDO_MAP = {'서울특별시':'서울','서울시':'서울','부산광역시':'부산','부산시':'부산','대구광역시':'대구','대구시':'대구','인천광역시':'인천','인천시':'인천',
+  '광주광역시':'광주','광주시':'광주','대전광역시':'대전','대전시':'대전','울산광역시':'울산','울산시':'울산','세종특별자치시':'세종','세종시':'세종',
+  '경기도':'경기','강원도':'강원','강원특별자치도':'강원','충청북도':'충북','충청남도':'충남','전라북도':'전북','전북특별자치도':'전북','전라남도':'전남',
+  '경상북도':'경북','경상남도':'경남','제주특별자치도':'제주','제주도':'제주'};
+function normAddress(s){
+  s = String(s || '').replace(/[\(\[]\s*\d{5}\s*[\)\]]/g, ' ').replace(/\([^)]*\)/g, ' ').replace(/[\d\-]+/g, ' ').replace(/[,]/g, ' ').replace(/\s+/g, ' ').trim();
+  var toks = s.split(' ').filter(Boolean);
+  if (!toks.length) return '';
+  var sido = SIDO_MAP[toks[0]] || toks[0].replace(/(특별자치시|특별자치도|통합특별시|특별시|광역시)$/, '');
+  if (sido.length >= 3 && /도$/.test(sido) && !SIDO_MAP[toks[0]]) sido = sido.slice(0, -1);
+  if (sido === '세종') return '세종';
+  var sgg = toks[1] || '';
+  if (/(로|길|동|읍|면|리)$/.test(sgg) && !/(시|군|구)$/.test(sgg)) sgg = '';
+  if (sgg.length >= 3) sgg = sgg.replace(/(시|군|구)$/, '');
+  return (sido + ' ' + sgg).trim();
+}
+function extractAddress(lines, fullText){
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    var idx = l.segs.findIndex(function(s){ return /^(주\s*소|현\s*주\s*소|거\s*주\s*지)\s*[:：]?$/.test(s); });
+    if (idx >= 0 && l.segs[idx + 1]) return normAddress(l.segs.slice(idx + 1).join(' '));
+    var m = l.text.match(/^(?:주\s*소|현\s*주\s*소)\s*[:：]?\s*(.+)$/);
+    if (m && m[1].length > 3) return normAddress(m[1].replace(/\t/g, ' '));
+  }
+  var m2 = fullText.match(/\(\s*\d{5}\s*\)\s*([^\n]+)/);
+  return m2 ? normAddress(m2[1]) : '';
+}
+
+function extractPhone(t){
+  var m = t.match(/(01[016789])[\s\-.)]*(\d{3,4})[\s\-.]*(\d{4})(?!\d)/);
+  return m ? m[1] + '-' + m[2] + '-' + m[3] : '';
+}
+function extractEmail(t){
+  var m = t.match(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}/);
+  return m ? m[0] : '';
+}
+function deptFromFilename(fname, name){
+  var s = String(fname || '').replace(/\.pdf$/i, '');
+  s = s.replace(/\([^)]*\)|\[[^\]]*\]|（[^）]*）|【[^】]*】/g, ' ').replace(/[0-9]/g, ' ');
+  if (name) s = s.split(name).join(' ');
+  s = s.replace(/이력서|지원서|입사지원/g, ' ').replace(/[_\-.,+·]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return s;
+}
+
+// pages + 파일명 → 레코드
+function extractRecord(pages, filename){
+  var lines = buildLines(pages);
+  var fullText = lines.map(function(l){ return l.segs.join(' '); }).join('\n');
+  var secs = splitSections(lines);
+  var eduSec = secs.filter(function(s){ return s.key === 'edu'; }).sort(function(a,b){ return b.lines.length - a.lines.length; })[0];
+  var carSecs = secs.filter(function(s){ return s.key === 'career'; });
+  var edu = parseEducation(eduSec);
+  var jobs = [];
+  carSecs.forEach(function(s){ jobs = jobs.concat(parseCareer(s)); });
+  var prevJob = jobs.length > 1 ? jobs.map(function(j){ return '- ' + j; }).join('\n') : (jobs[0] || '');
+  var name = extractName(pages, lines, fullText);
+  return {
+    name: name,
+    genderAge: extractGenderAge(fullText),
+    address: extractAddress(lines, fullText),
+    degree: degreeText(edu),
+    school: schoolText(edu),
+    career: prevJob ? '경력' : '신입',
+    prevJob: prevJob,
+    note: '',
+    dept: deptFromFilename(filename, name),
+    phone: extractPhone(fullText),
+    email: extractEmail(fullText),
+    _file: filename,
+    _textLen: fullText.replace(/\s/g, '').length
+  };
+}
+
+/* ===================== 엑셀 공통 유틸 ===================== */
+function displayWidth(s){
+  var w = 0; s = String(s == null ? '' : s);
+  for (var i = 0; i < s.length; i++) { var c = s.charCodeAt(i); w += (c > 0x2E80) ? 1.85 : (c >= 65 && c <= 90 ? 1.15 : 1); }
+  return w;
+}
+function maxLineWidth(v){ return String(v == null ? '' : v).split('\n').reduce(function(m, l){ return Math.max(m, displayWidth(l)); }, 0); }
+var LONG_KEYS = {school:1, prevJob:1, email:1, note:1, address:0};
+function isLongColumn(key, values){
+  if (LONG_KEYS[key]) return true;
+  var lens = values.filter(function(v){ return v != null && String(v) !== ''; }).map(function(v){ return maxLineWidth(v); });
+  if (!lens.length) return false;
+  var avg = lens.reduce(function(a,b){ return a + b; }, 0) / lens.length;
+  return avg > 16 || values.some(function(v){ return String(v == null ? '' : v).indexOf('\n') >= 0; });
+}
+function colLetter(n){ var s = ''; while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+function colNumber(l){ var n = 0; for (var i = 0; i < l.length; i++) n = n * 26 + (l.charCodeAt(i) - 64); return n; }
+
+// 수식 안의 셀 참조 행 보정. mode 'relative': $ 없는 행만 delta, mode 'insert': at 이상인 행을 모두 delta
+function shiftFormula(f, delta, mode, at){
+  var out = '', i = 0, inStr = false;
+  // 문자열 리터럴은 건드리지 않음
+  var parts = String(f).split('"');
+  return parts.map(function(part, idx){
+    if (idx % 2 === 1) return part;
+    return part.replace(/(^|[^A-Za-z0-9_.!])((?:'[^']+'|[A-Za-z0-9_]+)!)?(\$?)([A-Z]{1,3})(\$?)(\d{1,7})(?![A-Za-z0-9_(])/g, function(all, pre, sheet, cAbs, col, rAbs, row){
+      var r = +row;
+      if (mode === 'relative') { if (!rAbs) r += delta; }
+      else if (r >= at) r += delta;
+      if (r < 1) r = 1;
+      return pre + (sheet || '') + cAbs + col + rAbs + r;
+    });
+  }).join('"');
+}
+var BLACK = 'FF000000';
+var THIN = {style:'thin', color:{argb:'FF808080'}};
+var BORDER_ALL = {top:THIN, left:THIN, bottom:THIN, right:THIN};
+
+function detectHeaderRow(getText, maxRow, maxCol){
+  var best = null;
+  for (var r = 1; r <= Math.min(maxRow, 60); r++) {
+    var hits = 0, cols = [], last = 0, keys = {};
+    for (var c = 1; c <= Math.min(maxCol, 200); c++) {
+      var t = getText(r, c);
+      if (t === '' || t == null) continue;
+      var k = headerKey(t);
+      if (k && k !== '_other' && !keys[k]) { hits += 2; keys[k] = 1; } else if (k === '_other') hits += 1;
+      last = c;
+      cols.push({col: c, label: String(t).trim(), key: (k && k !== '_other') ? k : null});
+    }
+    if (hits >= 5 && (!best || hits > best.hits)) best = {row: r, hits: hits, cols: cols, lastCol: last};
+  }
+  if (best) {
+    // 같은 키가 중복되면 첫 열만 사용
+    var seen = {};
+    best.cols.forEach(function(c){ if (c.key) { if (seen[c.key]) c.key = null; else seen[c.key] = 1; } });
+    best.firstCol = best.cols[0].col;
+  }
+  return best;
+}
+
+/* ===================== .xlsx : 완전 보존 + 행만 추가 ===================== */
+function cellText(cell){
+  var v = cell.value;
+  if (v == null) return '';
+  if (typeof v === 'object') {
+    if (v.richText) return v.richText.map(function(r){ return r.text; }).join('');
+    if (v.formula || v.sharedFormula) return '';
+    if (v.text != null) return String(v.text);
+    if (v instanceof Date) return v.toISOString();
+    if (v.result != null) return String(v.result);
+    return '';
+  }
+  return String(v);
+}
+function isFormulaCell(cell){ var v = cell.value; return !!(v && typeof v === 'object' && (v.formula || v.sharedFormula)); }
+function withBlack(font){ var f = Object.assign({}, font || {}); f.color = {argb: BLACK}; return f; }
+
+function unshareFormulas(ws){
+  ws.eachRow({includeEmpty: false}, function(row){
+    row.eachCell({includeEmpty: false}, function(cell){
+      var v = cell.value;
+      if (v && typeof v === 'object' && v.sharedFormula) {
+        var f = cell.formula;
+        if (f) cell.value = {formula: f, result: v.result};
+      } else if (v && typeof v === 'object' && v.formula && v.shareType) {
+        cell.value = {formula: v.formula, result: v.result};
+      }
+    });
+  });
+}
+
+// 시트 내 at 행부터 n 행을 아래로 밀고 빈 행을 만듦 (병합·수식 보정 포함)
+function insertBlankRows(ws, at, n, lastCol){
+  if (n <= 0) return;
+  var maxRow = ws.rowCount;
+  var maxCol = Math.max(ws.columnCount, lastCol);
+  // 병합 정보 수집 후 영향 받는 병합 해제
+  var merges = [];
+  Object.keys(ws._merges || {}).forEach(function(k){
+    var m = ws._merges[k]; var mm = m.model || m;
+    merges.push({top: mm.top, left: mm.left, bottom: mm.bottom, right: mm.right});
+  });
+  var moving = merges.filter(function(m){ return m.top >= at; });
+  moving.forEach(function(m){ ws.unMergeCells(m.top, m.left, m.bottom, m.right); });
+  // 아래에서부터 복사
+  for (var r = maxRow; r >= at; r--) {
+    var src = ws.getRow(r), dst = ws.getRow(r + n);
+    dst.height = src.height;
+    if (src.hidden) dst.hidden = src.hidden;
+    for (var c = 1; c <= maxCol; c++) {
+      var sc = src.getCell(c), dc = dst.getCell(c);
+      var v = sc.value;
+      if (v && typeof v === 'object' && v.formula) v = {formula: shiftFormula(v.formula, n, 'insert', at), result: v.result};
+      dc.value = v;
+      dc.style = JSON.parse(JSON.stringify(sc.style || {}));
+      sc.value = null; sc.style = {};
+    }
+    src.height = undefined;
+  }
+  // 나머지 수식(위쪽)의 참조 보정
+  for (var r2 = 1; r2 < at; r2++) {
+    ws.getRow(r2).eachCell({includeEmpty: false}, function(cell){
+      var v = cell.value;
+      if (v && typeof v === 'object' && v.formula) cell.value = {formula: shiftFormula(v.formula, n, 'insert', at), result: v.result};
+    });
+  }
+  moving.forEach(function(m){ ws.mergeCells(m.top + n, m.left, m.bottom + n, m.right); });
+}
+
+function classifyRows(ws, hdr){
+  var colSet = hdr.cols.map(function(c){ return c.col; });
+  var noCol = (hdr.cols.filter(function(c){ return c.key === 'no'; })[0] || {}).col;
+  var res = [];
+  for (var r = hdr.row + 1; r <= ws.rowCount; r++) {
+    var row = ws.getRow(r), vals = 0, texts = [], anyOutside = false, merged = false, fcols = [];
+    for (var c = 1; c <= Math.max(hdr.lastCol, ws.columnCount); c++) {
+      var cell = row.getCell(c);
+      if (cell.isMerged && cell.master && cell.master.address !== cell.address) { merged = true; continue; }
+      if (isFormulaCell(cell)) { fcols.push(c); continue; }
+      var t = cellText(cell).trim();
+      if (!t) continue;
+      if (colSet.indexOf(c) < 0) { anyOutside = true; texts.push(t); continue; }
+      if (c === noCol) { texts.push(t); continue; }
+      vals++; texts.push(t);
+    }
+    var kind = 'empty';
+    if (texts.length) {
+      var first = texts[0];
+      if ((texts.length <= 2 && /^\s*[*※■▶●◆□○\-]|^\s*(주|참고|비고)\s*[):：]/.test(first)) || (texts.length === 1 && merged) || (vals === 0 && anyOutside)) kind = 'foot';
+      else kind = vals > 0 ? 'data' : 'empty';
+    }
+    res.push({row: r, kind: kind, fcols: fcols});
+  }
+  return res;
+}
+
+function writeXlsxPreserve(wb, ws, hdr, records){
+  unshareFormulas(ws);
+  var H = hdr.row, lastCol = hdr.lastCol;
+  var rows = classifyRows(ws, hdr);
+  var firstFoot = null, lastData = H, tmplF = [];
+  var noColF = (hdr.cols.filter(function(c){ return c.key === 'no'; })[0] || {}).col;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].kind === 'data') tmplF = rows[i].fcols;
+    if (rows[i].kind === 'empty' && rows[i].fcols.some(function(c){ return tmplF.indexOf(c) < 0 && !(c === noColF && lastData === H); })) rows[i].kind = 'foot';
+    if (rows[i].kind === 'foot') { firstFoot = rows[i].row; break; }
+    if (rows[i].kind === 'data') lastData = rows[i].row;
+  }
+  var start = lastData + 1;
+  var n = records.length;
+  // 기존 데이터 바로 다음의 빈 행(템플릿 행)은 그대로 사용, 부족하면 각주/내용 행 앞에 삽입
+  var emptyAvail = 0;
+  for (var r = start; ; r++) {
+    if (firstFoot && r >= firstFoot) break;
+    var k = rows.filter(function(x){ return x.row === r; })[0];
+    if (k && k.kind !== 'empty') break;
+    if (!k) { emptyAvail = Infinity; break; }
+    emptyAvail++;
+    if (emptyAvail >= n) break;
+  }
+  if (emptyAvail < n) insertBlankRows(ws, start + emptyAvail, n - emptyAvail, lastCol);
+
+  // 수식 템플릿 (마지막 데이터 행)
+  var tmplRow = lastData > H ? ws.getRow(lastData) : null;
+  var keyByCol = {}; hdr.cols.forEach(function(c){ keyByCol[c.col] = c.key; });
+  var colsRange = []; for (var c = hdr.firstCol; c <= lastCol; c++) colsRange.push(c);
+
+  records.forEach(function(rec, idx){
+    var rn = start + idx, row = ws.getRow(rn);
+    colsRange.forEach(function(c){
+      var cell = row.getCell(c), key = keyByCol[c];
+      if (key && key !== 'no' && rec[key] != null && rec[key] !== '') { cell.value = rec[key]; return; }
+      if (key === 'no') { if (!isFormulaCell(cell)) cell.value = null; return; }
+      if (isFormulaCell(cell)) return;
+      if (tmplRow) {
+        var tv = tmplRow.getCell(c).value;
+        if (tv && typeof tv === 'object' && tv.formula) { cell.value = {formula: shiftFormula(tv.formula, rn - lastData, 'relative')}; return; }
+      }
+      if (!key) cell.value = cell.value; // 기타 열은 공란 유지
+    });
+  });
+  var lastRow = start + n - 1;
+  if (lastRow < H + 1) lastRow = H; // 추가 없음
+
+  // 서식: 상단(헤더 위) 글자색만 검정
+  for (var r1 = 1; r1 < H; r1++) {
+    ws.getRow(r1).eachCell({includeEmpty: true}, function(cell){ if (cell.font || cellText(cell)) cell.font = withBlack(cell.font); });
+  }
+  // 헤더: 볼드 + 검정
+  ws.getRow(H).eachCell({includeEmpty: true}, function(cell, c){ if (c >= hdr.firstCol && c <= lastCol) { var f = withBlack(cell.font); f.bold = true; cell.font = f; } });
+
+  // 데이터 행: 검정 + zebra + 테두리 + 정렬
+  var alignByCol = {};
+  colsRange.forEach(function(c){
+    var vals = []; for (var r3 = H + 1; r3 <= lastRow; r3++) vals.push(cellText(ws.getRow(r3).getCell(c)));
+    alignByCol[c] = isLongColumn(keyByCol[c], vals) ? 'left' : 'center';
+  });
+  for (var r4 = H + 1; r4 <= lastRow; r4++) {
+    var row4 = ws.getRow(r4), zebra = ((r4 - H - 1) % 2 === 1), maxLines = 1;
+    colsRange.forEach(function(c){
+      var cell = row4.getCell(c);
+      cell.font = withBlack(cell.font);
+      cell.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: zebra ? 'FFF2F2F2' : 'FFFFFFFF'}};
+      cell.border = BORDER_ALL;
+      cell.alignment = Object.assign({}, cell.alignment || {}, {horizontal: alignByCol[c], vertical: 'middle', wrapText: true});
+      var t = cellText(cell); if (t) maxLines = Math.max(maxLines, t.split('\n').length);
+    });
+    if (r4 >= start && maxLines > 1) row4.height = Math.max(row4.height || 0, maxLines * 15 + 4);
+  }
+  ws.autoFilter = {from: {row: H, column: hdr.firstCol}, to: {row: Math.max(lastRow, H), column: lastCol}};
+  var view = Object.assign({}, (ws.views && ws.views[0]) || {});
+  view.state = 'frozen'; view.ySplit = H; view.xSplit = view.xSplit || 0; view.topLeftCell = colLetter(1) + (H + 1);
+  ws.views = [view];
+  return {start: start, end: lastRow};
+}
+
+/* ===================== .xls / 새 파일 : 내용 복사 + 새 서식 ===================== */
+// grid: 2차원 배열(0-based) / merges: [{s:{r,c},e:{r,c}}] / headerRow: 1-based
+function buildStyledWorkbook(opts){
+  var grid = opts.grid || [], merges = opts.merges || [], H = opts.headerRow, sheetName = opts.sheetName || '면접자 List';
+  var hdr = opts.hdr, records = opts.records;
+  var wb = new ExcelJS.Workbook();
+  var ws = wb.addWorksheet(sheetName);
+  var firstCol = hdr.firstCol, lastCol = hdr.lastCol;
+  var keyByCol = {}; hdr.cols.forEach(function(c){ keyByCol[c.col] = c.key; });
+  function g(r, c){ var row = grid[r - 1]; var v = row ? row[c - 1] : ''; return v == null ? '' : v; }
+  var maxGridCol = grid.reduce(function(m, row){ return Math.max(m, row ? row.length : 0); }, 0);
+  var allCols = Math.max(maxGridCol, lastCol);
+
+  // 1) 헤더 위 상단 영역
+  for (var r = 1; r < H; r++) for (var c = 1; c <= allCols; c++) { var v = g(r, c); if (v !== '') ws.getCell(r, c).value = v; }
+  var topMerges = merges.filter(function(m){ return m.e.r + 1 < H; });
+  topMerges.forEach(function(m){ try { ws.mergeCells(m.s.r + 1, m.s.c + 1, m.e.r + 1, m.e.c + 1); } catch (e) {} });
+  // 상단 정보 블록(값이 2개 이상인 행들) 범위에 볼드 + 테두리, 단독 제목 행은 볼드만
+  var infoRows = [], titleRows = [];
+  for (var r2 = 1; r2 < H; r2++) {
+    var cnt = 0; for (var c2 = 1; c2 <= allCols; c2++) if (g(r2, c2) !== '') cnt++;
+    var inMerge = topMerges.some(function(m){ return m.s.r + 1 <= r2 && m.e.r + 1 >= r2 && g(m.s.r + 1, m.s.c + 1) !== '' && (m.e.r > m.s.r); });
+    if (cnt >= 2 || (cnt >= 1 && inMerge)) infoRows.push(r2); else if (cnt === 1) titleRows.push(r2);
+  }
+  if (infoRows.length) {
+    var minC = Infinity, maxC = 0;
+    infoRows.forEach(function(r3){ for (var c3 = 1; c3 <= allCols; c3++) if (g(r3, c3) !== '') { minC = Math.min(minC, c3); maxC = Math.max(maxC, c3); } });
+    topMerges.forEach(function(m){ if (infoRows.indexOf(m.s.r + 1) >= 0 && g(m.s.r + 1, m.s.c + 1) !== '') { minC = Math.min(minC, m.s.c + 1); maxC = Math.max(maxC, m.e.c + 1); } });
+    var top = Math.min.apply(null, infoRows), bottom = Math.max.apply(null, infoRows);
+    for (var r4 = top; r4 <= bottom; r4++) {
+      var lines = 1;
+      for (var c4 = minC; c4 <= maxC; c4++) {
+        var cell = ws.getCell(r4, c4);
+        cell.font = {bold: true, color: {argb: BLACK}, size: 10};
+        cell.border = BORDER_ALL;
+        cell.alignment = {vertical: 'middle', horizontal: c4 === minC ? 'center' : 'left', wrapText: true};
+        var tv = g(r4, c4); if (tv !== '') lines = Math.max(lines, String(tv).split('\n').length);
+      }
+      ws.getRow(r4).height = Math.max(20, lines * 15);
+    }
+  }
+  titleRows.forEach(function(r5){ for (var c5 = 1; c5 <= allCols; c5++) if (g(r5, c5) !== '') { ws.getCell(r5, c5).font = {bold: true, size: 12, color: {argb: BLACK}}; ws.getCell(r5, c5).alignment = {vertical: 'middle'}; } ws.getRow(r5).height = 22; });
+
+  // 2) 헤더
+  var hRow = ws.getRow(H);
+  hdr.cols.forEach(function(hc){ hRow.getCell(hc.col).value = hc.label; });
+  for (var c6 = firstCol; c6 <= lastCol; c6++) {
+    var hcell = hRow.getCell(c6);
+    hcell.font = {bold: true, color: {argb: 'FFFFFFFF'}, size: 10};
+    hcell.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: 'FF1F3864'}};
+    hcell.border = BORDER_ALL;
+    hcell.alignment = {horizontal: 'center', vertical: 'middle', wrapText: true};
+  }
+  hRow.height = 28;
+
+  // 3) 기존 데이터 / 각주 분리 (헤더 아래)
+  var existing = [], footer = [], seenFoot = false;
+  for (var r7 = H + 1; r7 <= grid.length; r7++) {
+    var vals = []; for (var c7 = 1; c7 <= allCols; c7++) vals.push(g(r7, c7));
+    var inCols = vals.slice(firstCol - 1, lastCol).filter(function(v, i){ return v !== '' && keyByCol[firstCol + i] !== 'no'; }).length;
+    var nonEmpty = vals.filter(function(v){ return v !== ''; });
+    if (!nonEmpty.length) { if (seenFoot) footer.push({src: r7, vals: vals}); continue; }
+    var first = String(nonEmpty[0]);
+    var isFoot = seenFoot || (nonEmpty.length <= 2 && /^\s*[*※■▶●◆□○\-]|^\s*(주|참고|비고)\s*[):：]/.test(first)) || inCols === 0;
+    if (isFoot) { seenFoot = true; footer.push({src: r7, vals: vals}); }
+    else existing.push(vals);
+  }
+  while (footer.length && footer[footer.length - 1].vals.every(function(v){ return v === ''; })) footer.pop();
+
+  var dataRows = existing.map(function(vals){ return {vals: vals, isNew: false}; });
+  records.forEach(function(rec){
+    var vals = []; for (var c8 = 1; c8 <= allCols; c8++) { var k = keyByCol[c8]; vals.push(k && k !== 'no' && rec[k] != null ? rec[k] : ''); }
+    dataRows.push({vals: vals, isNew: true});
+  });
+
+  var alignByCol = {};
+  for (var c9 = firstCol; c9 <= lastCol; c9++) alignByCol[c9] = isLongColumn(keyByCol[c9], dataRows.map(function(d){ return d.vals[c9 - 1]; })) ? 'left' : 'center';
+
+  dataRows.forEach(function(d, i){
+    var rn = H + 1 + i, row = ws.getRow(rn), maxLines = 1;
+    for (var c10 = firstCol; c10 <= lastCol; c10++) {
+      var cell = row.getCell(c10), v = d.vals[c10 - 1];
+      if (v !== '' && v != null) cell.value = v;
+      cell.font = {color: {argb: BLACK}, size: 10};
+      cell.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: (i % 2 === 1) ? 'FFF2F2F2' : 'FFFFFFFF'}};
+      cell.border = BORDER_ALL;
+      cell.alignment = {horizontal: alignByCol[c10], vertical: 'middle', wrapText: true};
+      if (v != null && v !== '') maxLines = Math.max(maxLines, String(v).split('\n').length);
+    }
+    row.height = Math.max(20, maxLines * 15 + 4);
+  });
+  var lastDataRow = H + dataRows.length;
+
+  // 4) 각주는 데이터 아래로
+  var footStart = lastDataRow + 1 + (footer.length && footer[0].src > H + existing.length + 1 ? 1 : 0);
+  footer.forEach(function(f, i){
+    var rn = footStart + i;
+    f.vals.forEach(function(v, ci){ if (v !== '') { var cell = ws.getCell(rn, ci + 1); cell.value = v; cell.font = {size: 9, color: {argb: BLACK}}; } });
+  });
+  merges.filter(function(m){ return m.s.r + 1 > H; }).forEach(function(m){
+    var fi = footer.findIndex(function(f){ return f.src === m.s.r + 1; });
+    if (fi < 0) return;
+    var shift = footStart + fi - (m.s.r + 1);
+    try { ws.mergeCells(m.s.r + 1 + shift, m.s.c + 1, m.e.r + 1 + shift, m.e.c + 1); } catch (e) {}
+  });
+
+  // 5) 열 폭: 내용에 맞춰 유연하게
+  for (var c11 = 1; c11 <= allCols; c11++) {
+    var col = ws.getColumn(c11);
+    if (c11 >= firstCol && c11 <= lastCol) {
+      var w = maxLineWidth(hRow.getCell(c11).value) + 2;
+      dataRows.forEach(function(d){ w = Math.max(w, maxLineWidth(d.vals[c11 - 1]) + 2); });
+      var k2 = keyByCol[c11];
+      var minW = (k2 === 'no') ? 5 : 8;
+      col.width = Math.min(Math.max(w, minW), k2 === 'prevJob' || k2 === 'school' ? 52 : 40);
+    } else if (opts.colWidths && opts.colWidths[c11 - 1]) col.width = opts.colWidths[c11 - 1];
+  }
+
+  ws.autoFilter = {from: {row: H, column: firstCol}, to: {row: Math.max(lastDataRow, H), column: lastCol}};
+  ws.views = [{state: 'frozen', xSplit: 0, ySplit: H, topLeftCell: 'A' + (H + 1)}];
+  return wb;
+}
+
+if (typeof module !== 'undefined') module.exports = {buildLines: buildLines, extractRecord: extractRecord, detectHeaderRow: detectHeaderRow, writeXlsxPreserve: writeXlsxPreserve, buildStyledWorkbook: buildStyledWorkbook, shiftFormula: shiftFormula, normAddress: normAddress, normCompany: normCompany, headerKey: headerKey, cellText: cellText, DEFAULT_HEADERS: DEFAULT_HEADERS, FIELDS: FIELDS};
+</script>
+
+<script>
+/* ===================== 라이브러리 로딩 ===================== */
+var PDFJS_SOURCES = [
+  {js: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', worker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'},
+  {js: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js', worker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'}
+];
+var CMAP_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/';
+var EXCELJS_SOURCES = ['lib/exceljs.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js', 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'];
+var XLSX_SOURCES = ['lib/xlsx.full.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'];
+
+function loadScript(src){
+  return new Promise(function(res, rej){
+    var s = document.createElement('script'); s.src = src;
+    s.onload = function(){ res(src); };
+    s.onerror = function(){ s.remove(); rej(new Error('load fail: ' + src)); };
+    document.head.appendChild(s);
+  });
+}
+async function loadFirst(list, test){
+  if (test()) return 'already';
+  for (var i = 0; i < list.length; i++) {
+    var src = typeof list[i] === 'string' ? list[i] : list[i].js;
+    try { await loadScript(src); if (test()) return list[i]; } catch (e) {}
+  }
+  throw new Error('라이브러리를 불러오지 못했습니다');
+}
+function setBadge(id, text, ok){ var b = document.getElementById(id); b.textContent = text; b.className = 'badge ' + (ok ? 'ok' : 'err'); }
+
+var pdfReady = loadFirst(PDFJS_SOURCES, function(){ return !!window.pdfjsLib; }).then(function(src){
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = (src && src.worker) || PDFJS_SOURCES[0].worker;
+  setBadge('lib-pdf', 'pdf.js 준비됨', true);
+}).catch(function(e){ setBadge('lib-pdf', 'pdf.js 로딩 실패 (인터넷 연결 확인)', false); throw e; });
+var excelReady = loadFirst(EXCELJS_SOURCES, function(){ return !!window.ExcelJS; }).then(function(src){
+  setBadge('lib-exceljs', 'ExcelJS 준비됨' + (src === EXCELJS_SOURCES[0] ? ' (로컬)' : ''), true);
+}).catch(function(e){ setBadge('lib-exceljs', 'ExcelJS 로딩 실패', false); throw e; });
+var xlsxReady = null;
+function ensureXlsx(){
+  if (!xlsxReady) xlsxReady = loadFirst(XLSX_SOURCES, function(){ return !!window.XLSX; })
+    .then(function(){ setBadge('lib-xlsx', 'SheetJS 준비됨', true); })
+    .catch(function(e){ setBadge('lib-xlsx', 'SheetJS 로딩 실패', false); xlsxReady = null; throw e; });
+  return xlsxReady;
+}
+
+/* ===================== 상태 ===================== */
+var state = {base: null, records: []};
+var $ = function(id){ return document.getElementById(id); };
+function status(msg, kind){ var s = $('status'); s.textContent = msg; s.className = kind || ''; }
+
+/* ===================== 1. 엑셀 업로드 ===================== */
+async function handleExcel(file){
+  if (!file) return;
+  var info = $('excelInfo');
+  info.textContent = '읽는 중…';
+  try {
+    var buf = await file.arrayBuffer();
+    var isXls = /\.xls$/i.test(file.name);
+    if (isXls) {
+      await ensureXlsx();
+      var wbx = XLSX.read(new Uint8Array(buf), {type: 'array', cellDates: true});
+      var found = null;
+      for (var i = 0; i < wbx.SheetNames.length && !found; i++) {
+        var sh = wbx.Sheets[wbx.SheetNames[i]];
+        var grid = XLSX.utils.sheet_to_json(sh, {header: 1, defval: '', raw: true, blankrows: true});
+        // sheet_to_json 은 !ref 시작 행부터이므로 보정
+        var range = XLSX.utils.decode_range(sh['!ref'] || 'A1');
+        var full = []; for (var r = 0; r < range.s.r; r++) full.push([]);
+        grid.forEach(function(row){ var rr = []; for (var c = 0; c < range.s.c; c++) rr.push(''); full.push(rr.concat(row)); });
+        full = full.map(function(row){ return row.map(function(v){ return v instanceof Date ? v.getFullYear() + '-' + ('0' + (v.getMonth() + 1)).slice(-2) + '-' + ('0' + v.getDate()).slice(-2) : v; }); });
+        var hdr = detectHeaderRow(function(r, c){ var row = full[r - 1]; return row && row[c - 1] != null ? String(row[c - 1]) : ''; }, full.length, 200);
+        if (hdr) found = {type: 'xls', name: file.name, sheetName: wbx.SheetNames[i], grid: full, merges: sh['!merges'] || [], hdr: hdr,
+          colWidths: (sh['!cols'] || []).map(function(c){ return c && (c.wch || c.width) ? (c.wch || c.width) : null; })};
+      }
+      if (!found) throw new Error('헤더 행(No., 성명, 성별/나이 …)을 찾지 못했습니다.');
+      state.base = found;
+    } else {
+      await excelReady;
+      var wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buf);
+      var found2 = null;
+      wb.eachSheet(function(ws){
+        if (found2) return;
+        var hdr = detectHeaderRow(function(r, c){ return cellText(ws.getRow(r).getCell(c)).trim(); }, ws.rowCount, Math.max(ws.columnCount, 1));
+        if (hdr) found2 = {type: 'xlsx', name: file.name, buf: buf, sheetName: ws.name, hdr: hdr};
+      });
+      if (!found2) throw new Error('헤더 행(No., 성명, 성별/나이 …)을 찾지 못했습니다.');
+      state.base = found2;
+    }
+    var b = state.base;
+    var mapped = b.hdr.cols.filter(function(c){ return c.key && c.key !== 'no'; }).map(function(c){ return c.label; });
+    info.innerHTML = '<b>' + esc(file.name) + '</b>' +
+      (b.type === 'xlsx' ? '<span class="mode keep">완전 보존 + 행만 추가</span>' : '<span class="mode new">내용만 복사 + 새 서식</span>') +
+      '<br>시트 "' + esc(b.sheetName) + '" · 헤더 ' + b.hdr.row + '행 · 열 ' + b.hdr.cols.length + '개 인식' +
+      '<br>자동 입력 열: ' + esc(mapped.join(', ')) +
+      (b.type === 'xls' ? '<br><span style="color:var(--warn)">구형 .xls 파일은 원본 서식을 보존할 수 없어, 값만 옮기고 서식을 새로 입힙니다.</span>' : '');
+  } catch (e) {
+    state.base = null;
+    info.innerHTML = '<span style="color:var(--err)">읽기 실패: ' + esc(e.message) + '</span>';
+  }
+  refreshSave();
+}
+
+/* ===================== 2. PDF 업로드 ===================== */
+async function pdfToPages(buf){
+  var doc = await pdfjsLib.getDocument({data: new Uint8Array(buf), cMapUrl: CMAP_URL, cMapPacked: true}).promise;
+  var pages = [];
+  for (var p = 1; p <= doc.numPages; p++) {
+    var page = await doc.getPage(p);
+    var vp = page.getViewport({scale: 1});
+    var tc = await page.getTextContent();
+    pages.push({w: vp.width, h: vp.height, items: tc.items.filter(function(i){ return i.str; }).map(function(i){
+      return {s: i.str, x: i.transform[4], y: i.transform[5], h: Math.abs(i.transform[3]) || i.height || 8, w: i.width};
+    })});
+  }
+  return pages;
+}
+async function handlePdfs(files){
+  files = Array.prototype.filter.call(files, function(f){ return /\.pdf$/i.test(f.name); });
+  if (!files.length) return;
+  try { await pdfReady; } catch (e) { status('pdf.js를 불러오지 못해 PDF를 읽을 수 없습니다. 인터넷 연결을 확인해 주세요.', 'err'); return; }
+  var prog = $('prog'), bar = prog.firstElementChild, list = $('pdfList');
+  prog.style.display = 'block';
+  var fails = [];
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i], li = document.createElement('li');
+    li.textContent = f.name; list.appendChild(li);
+    try {
+      var pages = await pdfToPages(await f.arrayBuffer());
+      var rec = extractRecord(pages, f.name);
+      if (rec._textLen < 30) { fails.push(f.name + ' (텍스트 없음 · 스캔 이미지 PDF로 보임)'); li.className = 'fail'; }
+      else state.records.push(rec);
+    } catch (e) { fails.push(f.name + ' (' + e.message + ')'); li.className = 'fail'; }
+    bar.style.width = Math.round((i + 1) / files.length * 100) + '%';
+  }
+  setTimeout(function(){ prog.style.display = 'none'; bar.style.width = '0'; }, 600);
+  renderGrid();
+  if (fails.length) alert('다음 파일은 내용을 추출하지 못했습니다. 직접 입력해 주세요.\n\n- ' + fails.join('\n- '));
+}
+
+/* ===================== 3. 미리보기 표 ===================== */
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function renderGrid(){
+  var thead = document.querySelector('#grid thead'), tbody = document.querySelector('#grid tbody');
+  thead.innerHTML = '<tr><th>#</th>' + FIELDS.map(function(f){ return '<th>' + esc(f.label) + '</th>'; }).join('') + '<th>원본 파일</th><th></th></tr>';
+  var widths = {name: 80, genderAge: 90, address: 100, degree: 80, school: 280, career: 70, prevJob: 280, note: 100, dept: 110, phone: 120, email: 190};
+  tbody.innerHTML = '';
+  state.records.forEach(function(rec, i){
+    var tr = document.createElement('tr');
+    var html = '<td class="act">' + (i + 1) + '</td>';
+    FIELDS.forEach(function(f){
+      var v = rec[f.key] || '';
+      var empty = !v && f.key !== 'note' && f.key !== 'prevJob';
+      html += '<td' + (empty ? ' class="empty-cell"' : '') + ' style="min-width:' + widths[f.key] + 'px">' +
+        (f.multi ? '<textarea data-k="' + f.key + '" rows="' + Math.max(2, v.split('\n').length) + '">' + esc(v) + '</textarea>'
+                 : '<input data-k="' + f.key + '" value="' + esc(v) + '">') + '</td>';
+    });
+    html += '<td class="file">' + esc(rec._file || '(직접 입력)') + '</td><td class="act"><button class="btn del" data-del="' + i + '">삭제</button></td>';
+    tr.innerHTML = html;
+    tr.addEventListener('input', function(ev){
+      var k = ev.target.getAttribute('data-k'); if (!k) return;
+      rec[k] = ev.target.value;
+      if (k === 'prevJob') { rec.career = rec.prevJob.trim() ? '경력' : '신입'; var ci = tr.querySelector('[data-k=career]'); if (ci) ci.value = rec.career; }
+      ev.target.parentElement.classList.toggle('empty-cell', !ev.target.value && k !== 'note' && k !== 'prevJob');
+    });
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('[data-del]').forEach(function(b){ b.onclick = function(){ state.records.splice(+b.getAttribute('data-del'), 1); renderGrid(); }; });
+  $('rowCount').textContent = state.records.length ? '면접자 ' + state.records.length + '명' : '';
+  refreshSave();
+}
+function refreshSave(){
+  var ok = state.records.length > 0;
+  $('saveBtn').disabled = !ok;
+  $('saveHint').textContent = !ok ? 'PDF를 올리면 저장할 수 있습니다.' :
+    (state.base ? (state.base.type === 'xlsx' ? '원본 서식을 그대로 두고 ' : '값을 새 서식 파일로 옮긴 뒤 ') + state.records.length + '명을 마지막 행 다음에 추가합니다.'
+                : '기준 엑셀이 없어 기본 양식으로 새 파일을 만듭니다.');
+}
+
+/* ===================== 4. 저장 ===================== */
+function todayStr(){ var d = new Date(); return d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2); }
+function cleanRecords(){
+  return state.records.map(function(r){
+    var o = {}; FIELDS.forEach(function(f){ o[f.key] = String(r[f.key] == null ? '' : r[f.key]).replace(/\r/g, '').trim(); });
+    return o;
+  });
+}
+async function save(){
+  status('엑셀 파일을 만드는 중…');
+  try {
+    await excelReady;
+    var recs = cleanRecords(), wb, outName, b = state.base, msg;
+    if (b && b.type === 'xlsx') {
+      wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(b.buf.slice(0));
+      var ws = wb.getWorksheet(b.sheetName);
+      var hdr = detectHeaderRow(function(r, c){ return cellText(ws.getRow(r).getCell(c)).trim(); }, ws.rowCount, Math.max(ws.columnCount, 1));
+      var res = writeXlsxPreserve(wb, ws, hdr, recs);
+      msg = res.start + '~' + res.end + '행에 ' + recs.length + '명을 추가했습니다 (원본 서식 보존).';
+      outName = b.name.replace(/\.xlsx$/i, '');
+    } else if (b && b.type === 'xls') {
+      wb = buildStyledWorkbook({grid: b.grid, merges: b.merges, headerRow: b.hdr.row, hdr: b.hdr, records: recs, sheetName: b.sheetName, colWidths: b.colWidths});
+      msg = recs.length + '명을 추가해 새 서식의 .xlsx로 저장했습니다.';
+      outName = b.name.replace(/\.xls$/i, '');
+    } else {
+      var grid = [['* 면접자 List'], [], DEFAULT_HEADERS.slice()];
+      var hdr2 = detectHeaderRow(function(r, c){ var row = grid[r - 1]; return row && row[c - 1] != null ? String(row[c - 1]) : ''; }, grid.length, 50);
+      wb = buildStyledWorkbook({grid: grid, merges: [], headerRow: 3, hdr: hdr2, records: recs, sheetName: '면접자 List'});
+      msg = recs.length + '명으로 새 면접자 List를 만들었습니다.';
+      outName = '면접자 List';
+    }
+    var out = await wb.xlsx.writeBuffer();
+    var blob = new Blob([out], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = outName + '_추가_' + todayStr() + '.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000);
+    status(msg + ' → ' + a.download, 'ok');
+  } catch (e) {
+    console.error(e);
+    status('저장 실패: ' + e.message, 'err');
+  }
+}
+
+/* ===================== 이벤트 ===================== */
+function wireDrop(id, input, cb){
+  var d = $(id);
+  ['dragenter', 'dragover'].forEach(function(t){ d.addEventListener(t, function(e){ e.preventDefault(); d.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function(t){ d.addEventListener(t, function(e){ e.preventDefault(); d.classList.remove('over'); }); });
+  d.addEventListener('drop', function(e){ cb(e.dataTransfer.files); });
+  $(input).addEventListener('change', function(e){ cb(e.target.files); e.target.value = ''; });
+}
+wireDrop('dropExcel', 'excelInput', function(fs){ handleExcel(fs[0]); });
+wireDrop('dropPdf', 'pdfInput', handlePdfs);
+$('addRow').onclick = function(){ var r = {_file: ''}; FIELDS.forEach(function(f){ r[f.key] = ''; }); r.career = '신입'; state.records.push(r); renderGrid(); };
+$('saveBtn').onclick = save;
+renderGrid();
+</script>
+</body>
+</html>
